@@ -1,0 +1,20 @@
+# Ignore dataset and generated evaluation images
+data/*
+!data/.gitkeep
+eval_data/*
+!eval_data/.gitkeep
+
+# Ignore heavy model checkpoints
+experiments/*
+!experiments/.gitkeep
+
+# Ignore Python & OS caches
+__pycache__/
+*.py[cod]
+*$py.class
+.ipynb_checkpoints/
+.DS_Store
+
+# Ignore VSCode settings if not sharing
+.vscode/
+
