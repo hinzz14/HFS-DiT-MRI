@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HFS-DiT-FM MRI Reconstruction Studio</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <!-- Style Sheet -->
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Control Panel -->
+        <aside class="sidebar">
+            <div class="logo-area">
+                <span class="pulse-dot"></span>
+                <h2>HFS-DiT-FM Studio</h2>
+            </div>
+            
+            <div class="control-group">
+                <label>Golden Slices (Chọn nhanh)</label>
+                <div class="quick-buttons">
+                    <button class="btn-quick" onclick="setSlice(727)">Khuỷu Gối #727 </button>
+                    <button class="btn-quick" onclick="setSlice(140)">Lát cắt #140 </button>
+                    <button class="btn-quick" onclick="setSlice(2)">Lát cắt #2 </button>
+                </div>
+            </div>
+
+            <form id="recon-form">
+                <div class="control-group">
+                    <label for="slice-idx">Slice Index (Lát cắt): <span class="val-display" id="slice-val">727</span></label>
+                    <input type="range" id="slice-idx" min="0" max="3902" value="727" class="slider">
+                </div>
+
+                <div class="control-group">
+                    <label>Hệ số gia tốc (Acceleration)</label>
+                    <div class="radio-toggle">
+                        <input type="radio" id="acc4" name="acceleration" value="4">
+                        <label for="acc4">4×</label>
+                        <input type="radio" id="acc8" name="acceleration" value="8" checked>
+                        <label for="acc8">8×</label>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label for="center-fraction">Center Fraction: <span class="val-display" id="cf-val">0.04</span></label>
+                    <input type="range" id="center-fraction" min="0.02" max="0.16" step="0.02" value="0.04" class="slider">
+                </div>
+
+                <div class="control-group">
+                    <label for="ode-steps">Số bước giải ODE (Steps): <span class="val-display" id="steps-val">20</span></label>
+                    <input type="range" id="ode-steps" min="10" max="50" step="5" value="20" class="slider">
+                </div>
+
+                <button type="submit" class="btn-run" id="btn-submit">
+                    <span class="btn-text">BẮT ĐẦU PHỤC DỰNG</span>
+                    <span class="loader-spinner hidden"></span>
+                </button>
+            </form>
+
+            <div class="status-box">
+                <div class="status-header">Trạng thái hệ thống</div>
+                <div class="status-log" id="status-text">Sẵn sàng. Hãy nhấn nút để bắt đầu chạy mô hình.</div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <header class="app-header">
+                <h1>HFS-DiT-FM Phục Dựng Ảnh Khớp Gối MRI</h1>
+                <p>So sánh hiệu năng giữa baseline U-Net và giải pháp đề xuất Flow Matching Diffusion Transformers trên dữ liệu FastMRI.</p>
+            </header>
+
+            <!-- Section 1: Gallery -->
+            <section class="card-grid">
+                <!-- Ground Truth -->
+                <div class="card">
+                    <div class="card-header">Ground Truth (Ảnh gốc)</div>
+                    <div class="card-body">
+                        <div class="img-wrapper">
+                            <img id="img-gt" src="/static/placeholder_mri.png" alt="Ground Truth">
+                        </div>
+                        <div class="zoom-header">Vùng phóng to (ROI)</div>
+                        <div class="crop-wrapper">
+                            <img id="crop-gt" src="/static/placeholder_crop.png" alt="GT ROI">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Zero-Filled -->
+                <div class="card">
+                    <div class="card-header">Zero-Filled (Mất thông tin)</div>
+                    <div class="card-body">
+                        <div class="img-wrapper">
+                            <img id="img-zf" src="/static/placeholder_mri.png" alt="Zero-Filled">
+                        </div>
+                        <div class="zoom-header">Nhiễu sọc (Aliasing)</div>
+                        <div class="crop-wrapper">
+                            <img id="crop-zf" src="/static/placeholder_crop.png" alt="ZF ROI">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- U-Net -->
+                <div class="card">
+                    <div class="card-header">U-Net Baseline</div>
+                    <div class="card-body">
+                        <div class="img-wrapper">
+                            <img id="img-unet" src="/static/placeholder_mri.png" alt="U-Net">
+                        </div>
+                        <div class="zoom-header">Vùng phóng to (ROI)</div>
+                        <div class="crop-wrapper">
+                            <img id="crop-unet" src="/static/placeholder_crop.png" alt="U-Net ROI">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- HFS-DiT-FM -->
+                <div class="card highlighted">
+                    <div class="card-header badge-highlight">HFS-DiT-FM (Đề xuất)</div>
+                    <div class="card-body">
+                        <div class="img-wrapper">
+                            <img id="img-dit" src="/static/placeholder_mri.png" alt="HFS-DiT-FM">
+                        </div>
+                        <div class="zoom-header text-highlight">Vùng phóng to (ROI)</div>
+                        <div class="crop-wrapper border-highlight">
+                            <img id="crop-dit" src="/static/placeholder_crop.png" alt="DiT ROI">
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section 2: Metrics & Error Maps Grid -->
+            <section class="details-grid">
+                <!-- Metrics Table Card -->
+                <div class="details-card">
+                    <h3>Chỉ số Định lượng (Metrics)</h3>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Phương pháp</th>
+                                    <th>NMSE ↓</th>
+                                    <th>PSNR ↑</th>
+                                    <th>SSIM ↑</th>
+                                    <th>LPIPS ↓</th>
+                                    <th>Laplacian Var ↑</th>
+                                    <th>Thời gian xử lý</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr id="row-gt">
+                                    <td class="bold">Ground Truth</td>
+                                    <td>0.000%</td>
+                                    <td>∞</td>
+                                    <td>100.00%</td>
+                                    <td>0.0000</td>
+                                    <td id="m-lapvar-gt" class="bold">-</td>
+                                    <td>N/A</td>
+                                </tr>
+                                <tr id="row-zf">
+                                    <td class="bold">Zero-Filled</td>
+                                    <td id="m-nmse-zf">-</td>
+                                    <td id="m-psnr-zf">-</td>
+                                    <td id="m-ssim-zf">-</td>
+                                    <td id="m-lpips-zf">-</td>
+                                    <td id="m-lapvar-zf">-</td>
+                                    <td>N/A</td>
+                                </tr>
+                                <tr id="row-unet">
+                                    <td class="bold">U-Net Baseline</td>
+                                    <td id="m-nmse-unet">-</td>
+                                    <td id="m-psnr-unet">-</td>
+                                    <td id="m-ssim-unet">-</td>
+                                    <td id="m-lpips-unet">-</td>
+                                    <td id="m-lapvar-unet">-</td>
+                                    <td id="m-time-unet">-</td>
+                                </tr>
+                                <tr id="row-dit" class="highlight-row">
+                                    <td class="bold highlight-text">HFS-DiT-FM (Ours)</td>
+                                    <td id="m-nmse-dit" class="bold">-</td>
+                                    <td id="m-psnr-dit" class="bold">-</td>
+                                    <td id="m-ssim-dit" class="bold">-</td>
+                                    <td id="m-lpips-dit" class="bold">-</td>
+                                    <td id="m-lapvar-dit" class="bold">-</td>
+                                    <td id="m-time-dit">-</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Error Map Comparison Card -->
+                <div class="details-card">
+                    <h3>Bản đồ sai số (Error Maps)</h3>
+                    <div class="error-maps-container">
+                        <div class="err-box">
+                            <div class="err-label">U-Net Absolute Error (×5)</div>
+                            <img id="err-unet" src="/static/placeholder_err.png" alt="U-Net Error">
+                        </div>
+                        <div class="err-box">
+                            <div class="err-label label-highlight">HFS-DiT-FM Absolute Error (×5)</div>
+                            <img id="err-dit" src="/static/placeholder_err.png" alt="DiT Error">
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+    <!-- Script code -->
+    <script src="/static/app.js"></script>
+</body>
+</html>
