@@ -55,26 +55,3 @@ uvicorn web_app:app --host 0.0.0.0 --port 8000
 Truy cập vào địa chỉ `http://localhost:8000` trên trình duyệt để sử dụng.
 
 ---
-
-## 🚀 Hướng dẫn đẩy code hiện tại lên GitHub cá nhân của bạn
-
-Nếu bạn muốn đẩy toàn bộ code đã chỉnh sửa (không bao gồm dữ liệu nặng) lên repository GitHub cá nhân mới của bạn:
-
-1. **Tạo một repository mới** trên trang web GitHub của bạn (ví dụ đặt tên là `MRI-Reconstruction-Dashboard`). Không cần tích chọn tạo file README hay .gitignore mới vì dự án đã có sẵn.
-2. **Cập nhật link GitHub mới** cho git local trên máy hiện tại của bạn:
-   ```bash
-   # Thay URL dưới đây bằng URL repository GitHub cá nhân của bạn:
-   git remote set-url origin https://github.com/USERNAME/REPO_NAME.git
-   ```
-3. **Thêm toàn bộ file code & giao diện** vào commit (thư mục `data/` và `experiments/` đã được chặn tự động trong file `.gitignore` sẵn nên sẽ không bị push lên):
-   ```bash
-   git add web_app.py static/ requirements.txt README.md
-   ```
-4. **Tạo Commit**:
-   ```bash
-   git commit -m "Update web app with relative paths, requirements and readme"
-   ```
-5. **Push lên GitHub**:
-   ```bash
-   git push -u origin main
-   ```
