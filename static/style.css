@@ -259,7 +259,7 @@ body {
 /* Image Card Grid */
 .card-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 20px;
 }
 
@@ -405,7 +405,7 @@ td {
 /* Error maps style */
 .error-maps-container {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr 1fr 1fr;
     gap: 16px;
 }
 
@@ -449,4 +449,19 @@ td {
 
 .hidden {
     display: none;
+}
+
+.metrics-note {
+    margin-top: 15px;
+    padding: 12px 16px;
+    background: rgba(255, 255, 255, 0.03);
+    border-left: 3px solid var(--accent-cyan);
+    border-radius: 4px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+}
+
+.metrics-note strong {
+    color: var(--accent-cyan);
 }

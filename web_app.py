@@ -17,7 +17,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # Add HFS_DiT_FM to path
-sys.path.insert(0, "/home/loipd/MRI_Project/HFS_DiT_FM")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(BASE_DIR, "HFS_DiT_FM"))
 
 import fastmri
 from fastmri.data.mri_data import SliceDataset
@@ -32,11 +33,11 @@ from utils import r2c, c2r, fft2c, ifft2c
 app = FastAPI(title="HFS-DiT-FM Reconstruction Studio")
 
 # Mount Static Files
-app.mount("/static", StaticFiles(directory="/home/loipd/MRI_Project/static"), name="static")
+app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 
 @app.get("/")
 def read_root():
-    return FileResponse("/home/loipd/MRI_Project/static/index.html")
+    return FileResponse(os.path.join(BASE_DIR, "static/index.html"))
 
 # Lazy load LPIPS model
 lpips_fn = None
@@ -75,16 +76,21 @@ def get_models(acceleration: int):
             torch.serialization.add_safe_globals([pathlib.PosixPath])
             
             if acceleration == 4:
-                unet_ckpt = "experiments/unet_baseline/checkpoints/epoch=45-step=99912.ckpt"
-                dit_ckpt = "experiments/hfs_dit_fm/checkpoints/hfs-dit-fm-epoch=96-val_loss=0.0001.ckpt"
+                unet_ckpt = os.path.join(BASE_DIR, "experiments/unet_baseline/checkpoints/epoch=45-step=99912.ckpt")
+                dit_ckpt = os.path.join(BASE_DIR, "experiments/hfs_dit_fm/checkpoints/hfs-dit-fm-epoch=96-val_loss=0.0001.ckpt")
+                nohfs_ckpt = os.path.join(BASE_DIR, "experiments/no_hfs_dit_fm_4x/checkpoints/hfs-dit-fm-epoch=91-val_loss=0.4236.ckpt")
             else:
-                unet_ckpt = "experiments/unet_baseline_8x/checkpoints/epoch=40-step=89052.ckpt"
-                dit_ckpt = "experiments/hfs_dit_fm_8x/checkpoints/hfs-dit-fm-epoch=98-val_loss=0.0001.ckpt"
+                unet_ckpt = os.path.join(BASE_DIR, "experiments/unet_baseline_8x/checkpoints/epoch=40-step=89052.ckpt")
+                dit_ckpt = os.path.join(BASE_DIR, "experiments/hfs_dit_fm_8x/checkpoints/hfs-dit-fm-epoch=98-val_loss=0.0001.ckpt")
+                nohfs_ckpt = os.path.join(BASE_DIR, "experiments/no_hfs_dit_fm_8x/checkpoints/hfs-dit-fm-epoch=70-val_loss=0.4734.ckpt")
+                if not os.path.exists(nohfs_ckpt):
+                    nohfs_ckpt = os.path.join(BASE_DIR, "experiments/no_hfs_dit_fm_8x/checkpoints/last.ckpt")
                 
             unet_model = UnetModule.load_from_checkpoint(unet_ckpt).eval().to(device)
             dit_model = FlowMatchingDiTModule.load_from_checkpoint(dit_ckpt).eval().to(device)
+            nohfs_model = FlowMatchingDiTModule.load_from_checkpoint(nohfs_ckpt).eval().to(device)
             
-            models_cache[acceleration] = (unet_model, dit_model)
+            models_cache[acceleration] = (unet_model, dit_model, nohfs_model)
             print(f"✅ Models for {acceleration}x loaded successfully.")
         return models_cache[acceleration]
 
@@ -147,13 +153,13 @@ def reconstruct(req: ReconstructionRequest):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
         # 1. Load models (lazy/cached)
-        unet_model, dit_model = get_models(req.acceleration)
+        unet_model, dit_model, nohfs_model = get_models(req.acceleration)
         
         # 2. Setup Transform and Dataset
         mask_func = RandomMaskFunc(center_fractions=[req.center_fraction], accelerations=[req.acceleration])
         transform = HFSDataTransform(mask_func)
         
-        val_dir = "/home/loipd/MRI_Project/data/singlecoil_val"
+        val_dir = os.path.join(BASE_DIR, "data/singlecoil_val")
         dataset = SliceDataset(root=val_dir, transform=transform, challenge="singlecoil")
         
         # Check slice index validity
@@ -243,33 +249,62 @@ def reconstruct(req: ReconstructionRequest):
         dit_psnr = psnr_calc(dit_norm, t_norm).item()
         dit_ssim = ssim_calc(dit_norm, t_norm).item()
         
-        # 6. Compute LPIPS & Laplacian Variance
+        # 6. Run Standard DiT FM Inference (No HFS)
+        t_start_nohfs = time.time()
+        x_t_norm_nohfs = torch.randn_like(x1_image_norm)
+        cond_nohfs = c2r(ifft2c(k1_low_norm)).type(torch.float32)
+        
+        with torch.no_grad():
+            for i in range(req.ode_steps):
+                t_val = i * dt
+                t_tensor = torch.full((B,), t_val, device=device)
+                v_pred = nohfs_model(x_t_norm_nohfs, cond_nohfs, t_tensor)
+                x_t_proj = x_t_norm_nohfs + v_pred * dt
+                # Consistency
+                k_t = fft2c(r2c(x_t_proj))
+                k_t_high = k_t * (1 - mask)
+                x_t_norm_nohfs = c2r(ifft2c(k1_low_norm + k_t_high)).type(torch.float32)
+                
+        pred_mag_nohfs = magnitude(x_t_norm_nohfs * std_hfs)
+        nohfs_time = time.time() - t_start_nohfs
+        
+        nohfs_norm = torch.clamp(pred_mag_nohfs / mx, 0.0, 1.0)
+        nohfs_nmse = (torch.sum((t_norm - nohfs_norm)**2) / (torch.sum(t_norm**2) + 1e-11)).item() * 100
+        nohfs_psnr = psnr_calc(nohfs_norm, t_norm).item()
+        nohfs_ssim = ssim_calc(nohfs_norm, t_norm).item()
+        
+        # 7. Compute LPIPS & Laplacian Variance
         lpips_model = get_lpips_fn(device)
         
         gt_lap_var = calculate_laplacian_var(targ_mag)
         zf_lap_var = calculate_laplacian_var(input_mag)
         unet_lap_var = calculate_laplacian_var(pred_mag_unet)
         dit_lap_var = calculate_laplacian_var(pred_mag_hfs)
+        nohfs_lap_var = calculate_laplacian_var(pred_mag_nohfs)
         
         # Prepare inputs for LPIPS
         t_lp = to_lpips_input(targ_mag, mx)
         zf_lp = to_lpips_input(input_mag, mx)
         u_lp = to_lpips_input(pred_mag_unet, mx)
         h_lp = to_lpips_input(pred_mag_hfs, mx)
+        nohfs_lp = to_lpips_input(pred_mag_nohfs, mx)
         
         with torch.no_grad():
             zf_lpips = lpips_model(zf_lp, t_lp).item()
             unet_lpips = lpips_model(u_lp, t_lp).item()
             dit_lpips = lpips_model(h_lp, t_lp).item()
+            nohfs_lpips = lpips_model(nohfs_lp, t_lp).item()
             
-        # 7. Convert numpy maps
+        # 8. Convert numpy maps
         gt_np = t_norm.squeeze().cpu().numpy()
         zf_np = zf_norm.squeeze().cpu().numpy()
         unet_np = unet_norm.squeeze().cpu().numpy()
         dit_np = dit_norm.squeeze().cpu().numpy()
+        nohfs_np = nohfs_norm.squeeze().cpu().numpy()
         
         unet_err_np = np.abs(gt_np - unet_np)
         dit_err_np = np.abs(gt_np - dit_np)
+        nohfs_err_np = np.abs(gt_np - nohfs_np)
         
         # Crop region coordinates
         crop_bbox = (120, 220, 110, 210)
@@ -280,18 +315,22 @@ def reconstruct(req: ReconstructionRequest):
                 "gt": to_base64_pil(gt_np),
                 "zf": to_base64_pil(zf_np),
                 "unet": to_base64_pil(unet_np),
+                "nohfs": to_base64_pil(nohfs_np),
                 "dit": to_base64_pil(dit_np),
                 "gt_crop": to_base64_pil(gt_np, crop_bbox),
                 "zf_crop": to_base64_pil(zf_np, crop_bbox),
                 "unet_crop": to_base64_pil(unet_np, crop_bbox),
+                "nohfs_crop": to_base64_pil(nohfs_np, crop_bbox),
                 "dit_crop": to_base64_pil(dit_np, crop_bbox),
                 "unet_err": error_map_to_base64_pil(unet_err_np),
+                "nohfs_err": error_map_to_base64_pil(nohfs_err_np),
                 "dit_err": error_map_to_base64_pil(dit_err_np)
             },
             "metrics": {
                 "gt": {"lap_var": gt_lap_var},
                 "zf": {"nmse": zf_nmse, "psnr": zf_psnr, "ssim": zf_ssim, "lpips": zf_lpips, "lap_var": zf_lap_var},
                 "unet": {"nmse": unet_nmse, "psnr": unet_psnr, "ssim": unet_ssim, "lpips": unet_lpips, "lap_var": unet_lap_var, "time": unet_time},
+                "nohfs": {"nmse": nohfs_nmse, "psnr": nohfs_psnr, "ssim": nohfs_ssim, "lpips": nohfs_lpips, "lap_var": nohfs_lap_var, "time": nohfs_time},
                 "dit": {"nmse": dit_nmse, "psnr": dit_psnr, "ssim": dit_ssim, "lpips": dit_lpips, "lap_var": dit_lap_var, "time": dit_time}
             }
         }
