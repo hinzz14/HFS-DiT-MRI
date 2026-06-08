@@ -68,8 +68,8 @@ class FlowMatchingDiTModule(pl.LightningModule):
         x_zf_cond = c2r(ifft2c(k1_low)).type(torch.float32)
         
         if self.use_hfs:
-            # HFS: Ảnh X0 xuất phát từ Zero-filled kết hợp với Nhiễu tần số cao (scale nhỏ)
-            noise_scale = 0.1
+            # HFS: Ảnh X0 xuất phát từ Zero-filled kết hợp với Nhiễu tần số cao (scale 1.0)
+            noise_scale = 1.0
             noise_img = torch.randn_like(x1_image) * noise_scale # (B, 2, H, W)
             k0_noise = fft2c(r2c(noise_img))
             k0_high = k0_noise * (1 - mask)
@@ -90,12 +90,7 @@ class FlowMatchingDiTModule(pl.LightningModule):
         v_target = x1_image - x0_image
         
         # 4. MẠNG NƠ RON DỰ ĐOÁN
-        # Sửa lỗi: Trả lại quyền năng cho HFS!
-        # HFS được train mạnh nhất khi nó biết chính xác Nhiễu nó khởi tạo (x0_image) thay vì chỉ nhìn vào mặt nạ mờ.
-        if self.use_hfs:
-            cond_input = x0_image
-        else:
-            cond_input = x_zf_cond
+        cond_input = x_zf_cond
             
         v_pred = self(x_t, cond_input, t)
         
@@ -120,7 +115,7 @@ class FlowMatchingDiTModule(pl.LightningModule):
         x_zf_cond = c2r(ifft2c(k1_low)).type(torch.float32)
         
         if self.use_hfs:
-            noise_scale = 0.1
+            noise_scale = 1.0
             noise_img = torch.randn_like(x1_image) * noise_scale
             k0_noise = fft2c(r2c(noise_img))
             k0_high = k0_noise * (1 - mask)
@@ -135,10 +130,7 @@ class FlowMatchingDiTModule(pl.LightningModule):
         x_t = (1 - t_view) * x0_image + t_view * x1_image
         v_target = x1_image - x0_image
         
-        if self.use_hfs:
-            cond_input = x0_image
-        else:
-            cond_input = x_zf_cond
+        cond_input = x_zf_cond
             
         v_pred = self(x_t, cond_input, t)
         loss = torch.nn.functional.mse_loss(v_pred, v_target)

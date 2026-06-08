@@ -33,10 +33,7 @@ function setSlice(idx) {
     document.getElementById('slice-val').textContent = idx;
     
     // Đặt tham số mẫu đẹp
-    if (idx === 727) {
-        document.getElementById('center-fraction').value = 0.04;
-        document.getElementById('cf-val').textContent = "0.04";
-    } else if (idx === 493) {
+    if (idx === 727 || idx === 1438 || idx === 3030) {
         document.getElementById('center-fraction').value = 0.04;
         document.getElementById('cf-val').textContent = "0.04";
     }
@@ -91,22 +88,14 @@ async function triggerRecon() {
         const res = await response.json();
         
         if (res.success) {
-            // 1. Cập nhật các ảnh chính & ảnh zoom (Base64)
+            // 1. Cập nhật các ảnh chính (Base64)
             document.getElementById('img-gt').src = res.images.gt;
             document.getElementById('img-zf').src = res.images.zf;
             document.getElementById('img-unet').src = res.images.unet;
-            document.getElementById('img-nohfs').src = res.images.nohfs;
             document.getElementById('img-dit').src = res.images.dit;
-
-            document.getElementById('crop-gt').src = res.images.gt_crop;
-            document.getElementById('crop-zf').src = res.images.zf_crop;
-            document.getElementById('crop-unet').src = res.images.unet_crop;
-            document.getElementById('crop-nohfs').src = res.images.nohfs_crop;
-            document.getElementById('crop-dit').src = res.images.dit_crop;
 
             // 2. Cập nhật Error Maps
             document.getElementById('err-unet').src = res.images.unet_err;
-            document.getElementById('err-nohfs').src = res.images.nohfs_err;
             document.getElementById('err-dit').src = res.images.dit_err;
 
             // 3. Cập nhật bảng chỉ số (Metrics)
@@ -128,13 +117,6 @@ async function triggerRecon() {
             document.getElementById('m-lapvar-unet').textContent = `${res.metrics.unet.lap_var.toFixed(2)}`;
             document.getElementById('m-time-unet').textContent = `${res.metrics.unet.time.toFixed(3)}s`;
 
-            // Standard DiT-FM (No HFS)
-            document.getElementById('m-nmse-nohfs').textContent = `${res.metrics.nohfs.nmse.toFixed(3)}%`;
-            document.getElementById('m-psnr-nohfs').textContent = `${res.metrics.nohfs.psnr.toFixed(2)} dB`;
-            document.getElementById('m-ssim-nohfs').textContent = `${(res.metrics.nohfs.ssim * 100).toFixed(2)}%`;
-            document.getElementById('m-lpips-nohfs').textContent = `${res.metrics.nohfs.lpips.toFixed(4)}`;
-            document.getElementById('m-lapvar-nohfs').textContent = `${res.metrics.nohfs.lap_var.toFixed(2)}`;
-            document.getElementById('m-time-nohfs').textContent = `${res.metrics.nohfs.time.toFixed(3)}s`;
 
             // HFS-DiT-FM
             document.getElementById('m-nmse-dit').textContent = `${res.metrics.dit.nmse.toFixed(3)}%`;

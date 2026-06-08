@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <!-- Style Sheet -->
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v=3">
 </head>
 <body>
     <div class="app-container">
@@ -24,8 +24,8 @@
                 <label>Golden Slices (Chọn nhanh)</label>
                 <div class="quick-buttons">
                     <button class="btn-quick" onclick="setSlice(727)">Khuỷu Gối #727 </button>
-                    <button class="btn-quick" onclick="setSlice(140)">Lát cắt #140 </button>
-                    <button class="btn-quick" onclick="setSlice(2)">Lát cắt #2 </button>
+                    <button class="btn-quick" onclick="setSlice(1438)">Lát cắt #1438 </button>
+                    <button class="btn-quick" onclick="setSlice(3030)">Lát cắt #3030 </button>
                 </div>
             </div>
 
@@ -51,8 +51,8 @@
                 </div>
 
                 <div class="control-group">
-                    <label for="ode-steps">Số bước giải ODE (Steps): <span class="val-display" id="steps-val">20</span></label>
-                    <input type="range" id="ode-steps" min="10" max="50" step="5" value="20" class="slider">
+                    <label for="ode-steps">Số bước giải ODE (Steps): <span class="val-display" id="steps-val">50</span></label>
+                    <input type="range" id="ode-steps" min="10" max="100" step="5" value="50" class="slider">
                 </div>
 
                 <button type="submit" class="btn-run" id="btn-submit">
@@ -83,10 +83,6 @@
                         <div class="img-wrapper">
                             <img id="img-gt" src="/static/placeholder_mri.png" alt="Ground Truth">
                         </div>
-                        <div class="zoom-header">Vùng phóng to (ROI)</div>
-                        <div class="crop-wrapper">
-                            <img id="crop-gt" src="/static/placeholder_crop.png" alt="GT ROI">
-                        </div>
                     </div>
                 </div>
 
@@ -96,10 +92,6 @@
                     <div class="card-body">
                         <div class="img-wrapper">
                             <img id="img-zf" src="/static/placeholder_mri.png" alt="Zero-Filled">
-                        </div>
-                        <div class="zoom-header">Nhiễu sọc (Aliasing)</div>
-                        <div class="crop-wrapper">
-                            <img id="crop-zf" src="/static/placeholder_crop.png" alt="ZF ROI">
                         </div>
                     </div>
                 </div>
@@ -111,26 +103,11 @@
                         <div class="img-wrapper">
                             <img id="img-unet" src="/static/placeholder_mri.png" alt="U-Net">
                         </div>
-                        <div class="zoom-header">Vùng phóng to (ROI)</div>
-                        <div class="crop-wrapper">
-                            <img id="crop-unet" src="/static/placeholder_crop.png" alt="U-Net ROI">
-                        </div>
                     </div>
                 </div>
 
-                <!-- Standard DiT-FM (No HFS) -->
-                <div class="card">
-                    <div class="card-header">Standard DiT-FM (No HFS)</div>
-                    <div class="card-body">
-                        <div class="img-wrapper">
-                            <img id="img-nohfs" src="/static/placeholder_mri.png" alt="Standard DiT-FM">
-                        </div>
-                        <div class="zoom-header">Vùng phóng to (ROI)</div>
-                        <div class="crop-wrapper">
-                            <img id="crop-nohfs" src="/static/placeholder_crop.png" alt="No-HFS ROI">
-                        </div>
-                    </div>
-                </div>
+
+
 
                 <!-- HFS-DiT-FM -->
                 <div class="card highlighted">
@@ -138,10 +115,6 @@
                     <div class="card-body">
                         <div class="img-wrapper">
                             <img id="img-dit" src="/static/placeholder_mri.png" alt="HFS-DiT-FM">
-                        </div>
-                        <div class="zoom-header text-highlight">Vùng phóng to (ROI)</div>
-                        <div class="crop-wrapper border-highlight">
-                            <img id="crop-dit" src="/static/placeholder_crop.png" alt="DiT ROI">
                         </div>
                     </div>
                 </div>
@@ -193,15 +166,7 @@
                                     <td id="m-lapvar-unet">-</td>
                                     <td id="m-time-unet">-</td>
                                 </tr>
-                                <tr id="row-nohfs">
-                                    <td class="bold">Standard DiT-FM (No HFS)</td>
-                                    <td id="m-nmse-nohfs">-</td>
-                                    <td id="m-psnr-nohfs">-</td>
-                                    <td id="m-ssim-nohfs">-</td>
-                                    <td id="m-lpips-nohfs">-</td>
-                                    <td id="m-lapvar-nohfs">-</td>
-                                    <td id="m-time-nohfs">-</td>
-                                </tr>
+
                                 <tr id="row-dit" class="highlight-row">
                                     <td class="bold highlight-text">HFS-DiT-FM (Ours)</td>
                                     <td id="m-nmse-dit" class="bold">-</td>
@@ -214,9 +179,6 @@
                             </tbody>
                         </table>
                     </div>
-                    <div class="metrics-note">
-                        <strong>💡 Giải thích khoa học về chỉ số:</strong> Mặc dù mô hình <em>Standard DiT-FM (No HFS)</em> có LPIPS tốt hơn (thấp hơn) và Laplacian Var cao hơn Ground Truth, điều này là do hiện tượng <strong>Thiên kiến đặc trưng (LPIPS Bias)</strong> và <strong>nhiễu tần số cao giả tạo</strong>. Mạng trích xuất đặc trưng LPIPS (AlexNet) bị đánh lừa bởi các gai nhiễu sắc nhọn này, coi đó là cấu trúc thực tế, trong khi các chỉ số tương quan cấu trúc cốt lõi như PSNR và SSIM của nó đều cực kỳ kém so với mô hình đề xuất HFS-DiT-FM.
-                    </div>
                 </div>
 
                 <!-- Error Map Comparison Card -->
@@ -227,10 +189,7 @@
                             <div class="err-label">U-Net Absolute Error (×5)</div>
                             <img id="err-unet" src="/static/placeholder_err.png" alt="U-Net Error">
                         </div>
-                        <div class="err-box">
-                            <div class="err-label">Standard DiT-FM Absolute Error (×5)</div>
-                            <img id="err-nohfs" src="/static/placeholder_err.png" alt="No-HFS Error">
-                        </div>
+
                         <div class="err-box">
                             <div class="err-label label-highlight">HFS-DiT-FM Absolute Error (×5)</div>
                             <img id="err-dit" src="/static/placeholder_err.png" alt="DiT Error">
@@ -241,6 +200,6 @@
         </main>
     </div>
     <!-- Script code -->
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=3"></script>
 </body>
 </html>
