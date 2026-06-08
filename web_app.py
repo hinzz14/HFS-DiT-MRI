@@ -289,9 +289,9 @@ def reconstruct(req: ReconstructionRequest):
                 v_pred = nohfs_model(x_t_norm_nohfs, cond_nohfs, t_tensor)
                 x_t_norm_nohfs = x_t_norm_nohfs + v_pred * dt
                 
-        k_final_nohfs = fft2c(r2c(x_t_norm_nohfs))
-        k_final_nohfs_high = k_final_nohfs * (1 - mask)
-        x_t_norm_nohfs = c2r(ifft2c(k1_low_norm + k_final_nohfs_high)).type(torch.float32)
+        # k_final_nohfs = fft2c(r2c(x_t_norm_nohfs))
+        # k_final_nohfs_high = k_final_nohfs * (1 - mask)
+        # x_t_norm_nohfs = c2r(ifft2c(k1_low_norm + k_final_nohfs_high)).type(torch.float32)
         pred_mag_nohfs = magnitude(x_t_norm_nohfs * std_hfs)
         nohfs_time = time.time() - t_start_nohfs
         
