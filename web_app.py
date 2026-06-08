@@ -66,29 +66,90 @@ def to_lpips_input(mag_img, mx):
 
 # Model Caching Setup
 models_cache = {}
+loaded_checkpoints_mtime = {}
 cache_lock = threading.Lock()
 
 def get_models(acceleration: int):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     with cache_lock:
-        if acceleration not in models_cache:
-            print(f"📦 Loading checkpoints for {acceleration}x acceleration...")
-            torch.serialization.add_safe_globals([pathlib.PosixPath])
+        if acceleration == 4:
+            unet_ckpt = os.path.join(BASE_DIR, "experiments/unet_baseline/checkpoints/epoch=45-step=99912.ckpt")
+            nohfs_ckpt = os.path.join(BASE_DIR, "experiments/no_hfs_dit_fm_4x/checkpoints/hfs-dit-fm-epoch=91-val_loss=0.4236.ckpt")
+            hfs_ckpt = os.path.join(BASE_DIR, "experiments/hfs_dit_fm_4x/checkpoints/last.ckpt")
+        else:
+            unet_ckpt = os.path.join(BASE_DIR, "experiments/unet_baseline_8x/checkpoints/epoch=40-step=89052.ckpt")
+            nohfs_ckpt = os.path.join(BASE_DIR, "experiments/no_hfs_dit_fm_8x/checkpoints/hfs-dit-fm-epoch=70-val_loss=0.4734.ckpt")
+            if not os.path.exists(nohfs_ckpt):
+                nohfs_ckpt = os.path.join(BASE_DIR, "experiments/no_hfs_dit_fm_8x/checkpoints/last.ckpt")
+            hfs_ckpt = os.path.join(BASE_DIR, "experiments/hfs_dit_fm_8x/checkpoints/last.ckpt")
             
-            if acceleration == 4:
-                unet_ckpt = os.path.join(BASE_DIR, "experiments/unet_baseline/checkpoints/epoch=45-step=99912.ckpt")
-                dit_ckpt = os.path.join(BASE_DIR, "experiments/no_hfs_dit_fm_4x/checkpoints/hfs-dit-fm-epoch=91-val_loss=0.4236.ckpt")
-            else:
-                unet_ckpt = os.path.join(BASE_DIR, "experiments/unet_baseline_8x/checkpoints/epoch=40-step=89052.ckpt")
-                dit_ckpt = os.path.join(BASE_DIR, "experiments/no_hfs_dit_fm_8x/checkpoints/hfs-dit-fm-epoch=70-val_loss=0.4734.ckpt")
-                if not os.path.exists(dit_ckpt):
-                    dit_ckpt = os.path.join(BASE_DIR, "experiments/no_hfs_dit_fm_8x/checkpoints/last.ckpt")
-                
+        unet_mtime = os.path.getmtime(unet_ckpt) if os.path.exists(unet_ckpt) else 0
+        nohfs_mtime = os.path.getmtime(nohfs_ckpt) if os.path.exists(nohfs_ckpt) else 0
+        hfs_mtime = os.path.getmtime(hfs_ckpt) if os.path.exists(hfs_ckpt) else 0
+        
+        cached = models_cache.get(acceleration)
+        
+        need_load_unet = cached is None or loaded_checkpoints_mtime.get((acceleration, 'unet')) != unet_mtime
+        need_load_nohfs = cached is None or loaded_checkpoints_mtime.get((acceleration, 'nohfs')) != nohfs_mtime
+        need_load_hfs = cached is None or loaded_checkpoints_mtime.get((acceleration, 'hfs')) != hfs_mtime
+        
+        if cached is None:
+            unet_model, nohfs_model, hfs_model = None, None, None
+        else:
+            unet_model, nohfs_model, hfs_model = cached
+            
+        torch.serialization.add_safe_globals([pathlib.PosixPath])
+        
+        if need_load_unet:
+            print(f"📦 Loading Unet checkpoint: {unet_ckpt}")
             unet_model = UnetModule.load_from_checkpoint(unet_ckpt).eval().to(device)
-            dit_model = FlowMatchingDiTModule.load_from_checkpoint(dit_ckpt).eval().to(device)
+            loaded_checkpoints_mtime[(acceleration, 'unet')] = unet_mtime
             
-            models_cache[acceleration] = (unet_model, dit_model)
-            print(f"✅ Models for {acceleration}x loaded successfully.")
+        if need_load_nohfs:
+            print(f"📦 Loading No-HFS checkpoint: {nohfs_ckpt}")
+            nohfs_model = FlowMatchingDiTModule.load_from_checkpoint(nohfs_ckpt).eval().to(device)
+            loaded_checkpoints_mtime[(acceleration, 'nohfs')] = nohfs_mtime
+            
+        if need_load_hfs:
+            # First try loading the exact hfs_ckpt
+            loaded_successfully = False
+            if os.path.exists(hfs_ckpt):
+                try:
+                    print(f"📦 Loading HFS checkpoint: {hfs_ckpt}")
+                    hfs_model = FlowMatchingDiTModule.load_from_checkpoint(hfs_ckpt).eval().to(device)
+                    loaded_checkpoints_mtime[(acceleration, 'hfs')] = hfs_mtime
+                    loaded_successfully = True
+                    print(f"✅ HFS Model loaded from {hfs_ckpt}")
+                except Exception as e:
+                    print(f"⚠️ Error loading HFS checkpoint {hfs_ckpt}: {e}")
+            
+            if not loaded_successfully:
+                import glob
+                hfs_pattern = os.path.join(os.path.dirname(hfs_ckpt), "*.ckpt")
+                hfs_files = glob.glob(hfs_pattern)
+                # Filter out last.ckpt to avoid double loading the same error if it failed
+                hfs_files = [f for f in hfs_files if not f.endswith("last.ckpt")]
+                if hfs_files:
+                    # Sort by modification time to get the latest completed epoch checkpoint
+                    hfs_files = sorted(hfs_files, key=os.path.getmtime, reverse=True)
+                    latest_hfs_file = hfs_files[0]
+                    file_mtime = os.path.getmtime(latest_hfs_file)
+                    
+                    if loaded_checkpoints_mtime.get((acceleration, 'hfs_file')) != latest_hfs_file or loaded_checkpoints_mtime.get((acceleration, 'hfs')) != file_mtime:
+                        try:
+                            print(f"📦 Loading HFS checkpoint: {latest_hfs_file}")
+                            hfs_model = FlowMatchingDiTModule.load_from_checkpoint(latest_hfs_file).eval().to(device)
+                            loaded_checkpoints_mtime[(acceleration, 'hfs')] = file_mtime
+                            loaded_checkpoints_mtime[(acceleration, 'hfs_file')] = latest_hfs_file
+                            loaded_successfully = True
+                            print(f"✅ HFS Model loaded from {latest_hfs_file}")
+                        except Exception as e:
+                            print(f"⚠️ Error loading HFS checkpoint {latest_hfs_file}: {e}")
+                            
+            if hfs_model is None:
+                print(f"⚠️ HFS checkpoint not found or failed to load. Mirroring No-HFS.")
+                
+        models_cache[acceleration] = (unet_model, nohfs_model, hfs_model)
         return models_cache[acceleration]
 
 class ReconstructionRequest(BaseModel):
@@ -150,7 +211,7 @@ def reconstruct(req: ReconstructionRequest):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
         # Load models from cache
-        unet_model, dit_model = get_models(req.acceleration)
+        unet_model, nohfs_model, hfs_model = get_models(req.acceleration)
         
         # 2. Setup Transform and Dataset
         mask_func = RandomMaskFunc(center_fractions=[req.center_fraction], accelerations=[req.acceleration])
@@ -208,16 +269,16 @@ def reconstruct(req: ReconstructionRequest):
         unet_psnr = psnr_calc(unet_norm, t_norm).item()
         unet_ssim = ssim_calc(unet_norm, t_norm).item()
         
-        # 5. Run HFS DiT FM Inference
-        t_start = time.time()
+        # 5. Run Standard DiT-FM (No HFS) Inference
+        t_start_nohfs = time.time()
         std_hfs = x1_image.std(dim=(1, 2, 3), keepdim=True)
         x1_image_norm = x1_image / (std_hfs + 1e-11)
         x1_complex_norm = r2c(x1_image_norm)
         k1_norm = fft2c(x1_complex_norm)
         k1_low_norm = k1_norm * mask 
         
-        x_t_norm = torch.randn_like(x1_image_norm)
-        cond = c2r(ifft2c(k1_low_norm)).type(torch.float32)
+        x_t_norm_nohfs = torch.randn_like(x1_image_norm)
+        cond_nohfs = c2r(ifft2c(k1_low_norm)).type(torch.float32)
         
         dt = 1.0 / req.ode_steps
         B = 1
@@ -225,48 +286,90 @@ def reconstruct(req: ReconstructionRequest):
             for i in range(req.ode_steps):
                 t_val = i * dt
                 t_tensor = torch.full((B,), t_val, device=device)
-                v_pred = dit_model(x_t_norm, cond, t_tensor)
-                x_t_norm = x_t_norm + v_pred * dt
+                v_pred = nohfs_model(x_t_norm_nohfs, cond_nohfs, t_tensor)
+                x_t_norm_nohfs = x_t_norm_nohfs + v_pred * dt
                 
-        k_final = fft2c(r2c(x_t_norm))
-        k_final_high = k_final * (1 - mask)
-        x_t_norm = c2r(ifft2c(k1_low_norm + k_final_high)).type(torch.float32)
-        pred_mag_hfs = magnitude(x_t_norm * std_hfs)
-        dit_time = time.time() - t_start
+        k_final_nohfs = fft2c(r2c(x_t_norm_nohfs))
+        k_final_nohfs_high = k_final_nohfs * (1 - mask)
+        x_t_norm_nohfs = c2r(ifft2c(k1_low_norm + k_final_nohfs_high)).type(torch.float32)
+        pred_mag_nohfs = magnitude(x_t_norm_nohfs * std_hfs)
+        nohfs_time = time.time() - t_start_nohfs
         
-        dit_norm = torch.clamp(pred_mag_hfs / mx, 0.0, 1.0)
-        dit_nmse = (torch.sum((t_norm - dit_norm)**2) / (torch.sum(t_norm**2) + 1e-11)).item() * 100
-        dit_psnr = psnr_calc(dit_norm, t_norm).item()
-        dit_ssim = ssim_calc(dit_norm, t_norm).item()
+        nohfs_norm = torch.clamp(pred_mag_nohfs / mx, 0.0, 1.0)
+        nohfs_nmse = (torch.sum((t_norm - nohfs_norm)**2) / (torch.sum(t_norm**2) + 1e-11)).item() * 100
+        nohfs_psnr = psnr_calc(nohfs_norm, t_norm).item()
+        nohfs_ssim = ssim_calc(nohfs_norm, t_norm).item()
         
-
+        # 6. Run HFS-DiT-FM (Ours) Inference
+        if hfs_model is not None:
+            t_start_hfs = time.time()
+            noise_scale = 1.0
+            noise_img = torch.randn_like(x1_image_norm) * noise_scale
+            k0_noise = fft2c(r2c(noise_img))
+            k0_high = k0_noise * (1 - mask) 
+            k0_norm = k1_low_norm + k0_high       
+            x_t_norm_hfs = c2r(ifft2c(k0_norm)).type(torch.float32)
+            cond_hfs = c2r(ifft2c(k1_low_norm)).type(torch.float32)
+            
+            with torch.no_grad():
+                for i in range(req.ode_steps):
+                    t_val = i * dt
+                    t_tensor = torch.full((B,), t_val, device=device)
+                    v_pred = hfs_model(x_t_norm_hfs, cond_hfs, t_tensor)
+                    x_t_norm_hfs = x_t_norm_hfs + v_pred * dt
+                    
+                    # Data Consistency (DC) tại mỗi bước nhảy để tránh trôi lệch phân phối K-space
+                    k_t = fft2c(r2c(x_t_norm_hfs))
+                    k_t_high = k_t * (1 - mask)
+                    x_t_norm_hfs = c2r(ifft2c(k1_low_norm + k_t_high)).type(torch.float32)
+                    
+            pred_mag_hfs = magnitude(x_t_norm_hfs * std_hfs)
+            hfs_time = time.time() - t_start_hfs
+            
+            hfs_norm = torch.clamp(pred_mag_hfs / mx, 0.0, 1.0)
+            hfs_nmse = (torch.sum((t_norm - hfs_norm)**2) / (torch.sum(t_norm**2) + 1e-11)).item() * 100
+            hfs_psnr = psnr_calc(hfs_norm, t_norm).item()
+            hfs_ssim = ssim_calc(hfs_norm, t_norm).item()
+        else:
+            hfs_norm = nohfs_norm.clone()
+            pred_mag_hfs = pred_mag_nohfs.clone()
+            hfs_nmse = nohfs_nmse
+            hfs_psnr = nohfs_psnr
+            hfs_ssim = nohfs_ssim
+            hfs_time = 0.0
+            
         # 7. Compute LPIPS & Laplacian Variance
         lpips_model = get_lpips_fn(device)
         
         gt_lap_var = calculate_laplacian_var(targ_mag)
         zf_lap_var = calculate_laplacian_var(input_mag)
         unet_lap_var = calculate_laplacian_var(pred_mag_unet)
-        dit_lap_var = calculate_laplacian_var(pred_mag_hfs)
+        nohfs_lap_var = calculate_laplacian_var(pred_mag_nohfs)
+        hfs_lap_var = calculate_laplacian_var(pred_mag_hfs)
         
         # Prepare inputs for LPIPS
         t_lp = to_lpips_input(targ_mag, mx)
         zf_lp = to_lpips_input(input_mag, mx)
         u_lp = to_lpips_input(pred_mag_unet, mx)
+        nh_lp = to_lpips_input(pred_mag_nohfs, mx)
         h_lp = to_lpips_input(pred_mag_hfs, mx)
         
         with torch.no_grad():
             zf_lpips = lpips_model(zf_lp, t_lp).item()
             unet_lpips = lpips_model(u_lp, t_lp).item()
-            dit_lpips = lpips_model(h_lp, t_lp).item()
+            nohfs_lpips = lpips_model(nh_lp, t_lp).item()
+            hfs_lpips = lpips_model(h_lp, t_lp).item()
             
         # 8. Convert numpy maps
         gt_np = t_norm.squeeze().cpu().numpy()
         zf_np = zf_norm.squeeze().cpu().numpy()
         unet_np = unet_norm.squeeze().cpu().numpy()
-        dit_np = dit_norm.squeeze().cpu().numpy()
+        nohfs_np = nohfs_norm.squeeze().cpu().numpy()
+        hfs_np = hfs_norm.squeeze().cpu().numpy()
         
         unet_err_np = np.abs(gt_np - unet_np)
-        dit_err_np = np.abs(gt_np - dit_np)
+        nohfs_err_np = np.abs(gt_np - nohfs_np)
+        hfs_err_np = np.abs(gt_np - hfs_np)
         
         # Crop region coordinates
         crop_bbox = (120, 220, 110, 210)
@@ -277,15 +380,18 @@ def reconstruct(req: ReconstructionRequest):
                 "gt": to_base64_pil(gt_np),
                 "zf": to_base64_pil(zf_np),
                 "unet": to_base64_pil(unet_np),
-                "dit": to_base64_pil(dit_np),
+                "nohfs": to_base64_pil(nohfs_np),
+                "dit": to_base64_pil(hfs_np),
                 "unet_err": error_map_to_base64_pil(unet_err_np),
-                "dit_err": error_map_to_base64_pil(dit_err_np)
+                "nohfs_err": error_map_to_base64_pil(nohfs_err_np),
+                "dit_err": error_map_to_base64_pil(hfs_err_np)
             },
             "metrics": {
                 "gt": {"lap_var": gt_lap_var},
                 "zf": {"nmse": zf_nmse, "psnr": zf_psnr, "ssim": zf_ssim, "lpips": zf_lpips, "lap_var": zf_lap_var},
                 "unet": {"nmse": unet_nmse, "psnr": unet_psnr, "ssim": unet_ssim, "lpips": unet_lpips, "lap_var": unet_lap_var, "time": unet_time},
-                "dit": {"nmse": dit_nmse, "psnr": dit_psnr, "ssim": dit_ssim, "lpips": dit_lpips, "lap_var": dit_lap_var, "time": dit_time}
+                "nohfs": {"nmse": nohfs_nmse, "psnr": nohfs_psnr, "ssim": nohfs_ssim, "lpips": nohfs_lpips, "lap_var": nohfs_lap_var, "time": nohfs_time},
+                "dit": {"nmse": hfs_nmse, "psnr": hfs_psnr, "ssim": hfs_ssim, "lpips": hfs_lpips, "lap_var": hfs_lap_var, "time": hfs_time}
             }
         }
     except Exception as e:

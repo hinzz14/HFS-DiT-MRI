@@ -106,6 +106,16 @@
                     </div>
                 </div>
 
+                <!-- Standard DiT-FM (No HFS) -->
+                <div class="card">
+                    <div class="card-header">Standard DiT-FM (No HFS)</div>
+                    <div class="card-body">
+                        <div class="img-wrapper">
+                            <img id="img-nohfs" src="/static/placeholder_mri.png" alt="Standard DiT-FM">
+                        </div>
+                    </div>
+                </div>
+
 
 
 
@@ -167,6 +177,16 @@
                                     <td id="m-time-unet">-</td>
                                 </tr>
 
+                                <tr id="row-nohfs">
+                                    <td class="bold">Standard DiT-FM (No HFS)</td>
+                                    <td id="m-nmse-nohfs">-</td>
+                                    <td id="m-psnr-nohfs">-</td>
+                                    <td id="m-ssim-nohfs">-</td>
+                                    <td id="m-lpips-nohfs">-</td>
+                                    <td id="m-lapvar-nohfs">-</td>
+                                    <td id="m-time-nohfs">-</td>
+                                </tr>
+
                                 <tr id="row-dit" class="highlight-row">
                                     <td class="bold highlight-text">HFS-DiT-FM (Ours)</td>
                                     <td id="m-nmse-dit" class="bold">-</td>
@@ -188,6 +208,11 @@
                         <div class="err-box">
                             <div class="err-label">U-Net Absolute Error (×5)</div>
                             <img id="err-unet" src="/static/placeholder_err.png" alt="U-Net Error">
+                        </div>
+
+                        <div class="err-box">
+                            <div class="err-label">Standard DiT-FM Absolute Error (×5)</div>
+                            <img id="err-nohfs" src="/static/placeholder_err.png" alt="No HFS Error">
                         </div>
 
                         <div class="err-box">

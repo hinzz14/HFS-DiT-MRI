@@ -92,10 +92,12 @@ async function triggerRecon() {
             document.getElementById('img-gt').src = res.images.gt;
             document.getElementById('img-zf').src = res.images.zf;
             document.getElementById('img-unet').src = res.images.unet;
+            document.getElementById('img-nohfs').src = res.images.nohfs;
             document.getElementById('img-dit').src = res.images.dit;
 
             // 2. Cập nhật Error Maps
             document.getElementById('err-unet').src = res.images.unet_err;
+            document.getElementById('err-nohfs').src = res.images.nohfs_err;
             document.getElementById('err-dit').src = res.images.dit_err;
 
             // 3. Cập nhật bảng chỉ số (Metrics)
@@ -117,8 +119,15 @@ async function triggerRecon() {
             document.getElementById('m-lapvar-unet').textContent = `${res.metrics.unet.lap_var.toFixed(2)}`;
             document.getElementById('m-time-unet').textContent = `${res.metrics.unet.time.toFixed(3)}s`;
 
+            // Standard DiT-FM (No HFS)
+            document.getElementById('m-nmse-nohfs').textContent = `${res.metrics.nohfs.nmse.toFixed(3)}%`;
+            document.getElementById('m-psnr-nohfs').textContent = `${res.metrics.nohfs.psnr.toFixed(2)} dB`;
+            document.getElementById('m-ssim-nohfs').textContent = `${(res.metrics.nohfs.ssim * 100).toFixed(2)}%`;
+            document.getElementById('m-lpips-nohfs').textContent = `${res.metrics.nohfs.lpips.toFixed(4)}`;
+            document.getElementById('m-lapvar-nohfs').textContent = `${res.metrics.nohfs.lap_var.toFixed(2)}`;
+            document.getElementById('m-time-nohfs').textContent = `${res.metrics.nohfs.time.toFixed(3)}s`;
 
-            // HFS-DiT-FM
+            // HFS-DiT-FM (Ours)
             document.getElementById('m-nmse-dit').textContent = `${res.metrics.dit.nmse.toFixed(3)}%`;
             document.getElementById('m-psnr-dit').textContent = `${res.metrics.dit.psnr.toFixed(2)} dB`;
             document.getElementById('m-ssim-dit').textContent = `${(res.metrics.dit.ssim * 100).toFixed(2)}%`;
