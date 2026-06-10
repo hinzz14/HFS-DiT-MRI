@@ -69,19 +69,65 @@ models_cache = {}
 loaded_checkpoints_mtime = {}
 cache_lock = threading.Lock()
 
+def get_best_checkpoint(checkpoint_dir, fallback_name="last.ckpt"):
+    import glob
+    if not checkpoint_dir or not os.path.exists(checkpoint_dir):
+        return None
+    ckpt_files = glob.glob(os.path.join(checkpoint_dir, "*.ckpt"))
+    if not ckpt_files:
+        return None
+        
+    best_file = None
+    min_loss = float('inf')
+    
+    # 1. Ưu tiên các file có chứa val_loss trong tên
+    val_loss_files = [f for f in ckpt_files if "val_loss=" in os.path.basename(f)]
+    if val_loss_files:
+        for f in val_loss_files:
+            try:
+                parts = os.path.basename(f).split("val_loss=")
+                if len(parts) > 1:
+                    loss_val = float(parts[1].replace(".ckpt", ""))
+                    if loss_val < min_loss:
+                        min_loss = loss_val
+                        best_file = f
+            except ValueError:
+                continue
+                
+    if best_file is not None:
+        return best_file
+        
+    # 2. Nếu không tìm thấy file val_loss, ưu tiên file last.ckpt
+    last_ckpt = os.path.join(checkpoint_dir, fallback_name)
+    if os.path.exists(last_ckpt):
+        return last_ckpt
+        
+    # 3. Lấy file bất kỳ đầu tiên trong thư mục làm fallback cuối cùng
+    return ckpt_files[0]
+
 def get_models(acceleration: int):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     with cache_lock:
         if acceleration == 4:
-            unet_ckpt = os.path.join(BASE_DIR, "experiments/unet_baseline/checkpoints/epoch=45-step=99912.ckpt")
-            nohfs_ckpt = os.path.join(BASE_DIR, "experiments/no_hfs_dit_fm_4x/checkpoints/hfs-dit-fm-epoch=91-val_loss=0.4236.ckpt")
-            hfs_ckpt = os.path.join(BASE_DIR, "experiments/hfs_dit_fm_4x/checkpoints/last.ckpt")
+            unet_dir = os.path.join(BASE_DIR, "experiments/unet_baseline/checkpoints")
+            nohfs_dir = os.path.join(BASE_DIR, "experiments/no_hfs_dit_fm_4x/checkpoints")
+            hfs_dir = os.path.join(BASE_DIR, "experiments/hfs_dit_fm_4x/checkpoints")
         else:
-            unet_ckpt = os.path.join(BASE_DIR, "experiments/unet_baseline_8x/checkpoints/epoch=40-step=89052.ckpt")
-            nohfs_ckpt = os.path.join(BASE_DIR, "experiments/no_hfs_dit_fm_8x/checkpoints/hfs-dit-fm-epoch=70-val_loss=0.4734.ckpt")
-            if not os.path.exists(nohfs_ckpt):
-                nohfs_ckpt = os.path.join(BASE_DIR, "experiments/no_hfs_dit_fm_8x/checkpoints/last.ckpt")
-            hfs_ckpt = os.path.join(BASE_DIR, "experiments/hfs_dit_fm_8x/checkpoints/last.ckpt")
+            unet_dir = os.path.join(BASE_DIR, "experiments/unet_baseline_8x/checkpoints")
+            nohfs_dir = os.path.join(BASE_DIR, "experiments/no_hfs_dit_fm_8x/checkpoints")
+            hfs_dir = os.path.join(BASE_DIR, "experiments/hfs_dit_fm_8x/checkpoints")
+            
+        unet_ckpt = get_best_checkpoint(unet_dir)
+        nohfs_ckpt = get_best_checkpoint(nohfs_dir)
+        hfs_ckpt = get_best_checkpoint(hfs_dir)
+        
+        # Fallback cứng nếu không quét được thư mục tự động
+        if not unet_ckpt:
+            unet_ckpt = os.path.join(unet_dir, "epoch=45-step=99912.ckpt" if acceleration == 4 else "epoch=40-step=89052.ckpt")
+        if not nohfs_ckpt:
+            nohfs_ckpt = os.path.join(nohfs_dir, "last.ckpt")
+        if not hfs_ckpt:
+            hfs_ckpt = os.path.join(hfs_dir, "last.ckpt")
             
         unet_mtime = os.path.getmtime(unet_ckpt) if os.path.exists(unet_ckpt) else 0
         nohfs_mtime = os.path.getmtime(nohfs_ckpt) if os.path.exists(nohfs_ckpt) else 0
@@ -111,7 +157,6 @@ def get_models(acceleration: int):
             loaded_checkpoints_mtime[(acceleration, 'nohfs')] = nohfs_mtime
             
         if need_load_hfs:
-            # First try loading the exact hfs_ckpt
             loaded_successfully = False
             if os.path.exists(hfs_ckpt):
                 try:
@@ -122,29 +167,6 @@ def get_models(acceleration: int):
                     print(f"✅ HFS Model loaded from {hfs_ckpt}")
                 except Exception as e:
                     print(f"⚠️ Error loading HFS checkpoint {hfs_ckpt}: {e}")
-            
-            if not loaded_successfully:
-                import glob
-                hfs_pattern = os.path.join(os.path.dirname(hfs_ckpt), "*.ckpt")
-                hfs_files = glob.glob(hfs_pattern)
-                # Filter out last.ckpt to avoid double loading the same error if it failed
-                hfs_files = [f for f in hfs_files if not f.endswith("last.ckpt")]
-                if hfs_files:
-                    # Sort by modification time to get the latest completed epoch checkpoint
-                    hfs_files = sorted(hfs_files, key=os.path.getmtime, reverse=True)
-                    latest_hfs_file = hfs_files[0]
-                    file_mtime = os.path.getmtime(latest_hfs_file)
-                    
-                    if loaded_checkpoints_mtime.get((acceleration, 'hfs_file')) != latest_hfs_file or loaded_checkpoints_mtime.get((acceleration, 'hfs')) != file_mtime:
-                        try:
-                            print(f"📦 Loading HFS checkpoint: {latest_hfs_file}")
-                            hfs_model = FlowMatchingDiTModule.load_from_checkpoint(latest_hfs_file).eval().to(device)
-                            loaded_checkpoints_mtime[(acceleration, 'hfs')] = file_mtime
-                            loaded_checkpoints_mtime[(acceleration, 'hfs_file')] = latest_hfs_file
-                            loaded_successfully = True
-                            print(f"✅ HFS Model loaded from {latest_hfs_file}")
-                        except Exception as e:
-                            print(f"⚠️ Error loading HFS checkpoint {latest_hfs_file}: {e}")
                             
             if hfs_model is None:
                 print(f"⚠️ HFS checkpoint not found or failed to load. Mirroring No-HFS.")
